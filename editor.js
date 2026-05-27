@@ -65,7 +65,11 @@ editor.setSize("100%", "100%");
 
 
 function parseCanvasSize(code) {
-  const match = code.match(/createCanvas\s*\(\s*([0-9]+)\s*,\s*([0-9]+)/);
+  // support both p5.js createCanvas(w,h) and Khan/ProcessingJS size(w,h)
+  let match = code.match(/createCanvas\s*\(\s*([0-9]+)\s*,\s*([0-9]+)/);
+  if (match) return { width: Number(match[1]), height: Number(match[2]) };
+
+  match = code.match(/\bsize\s*\(\s*([0-9]+)\s*,\s*([0-9]+)/);
   return match ? { width: Number(match[1]), height: Number(match[2]) } : null;
 }
 
@@ -114,10 +118,16 @@ function createFrame(code) {
     .replace(/\bpushMatrix\s*\(\s*\)/g, 'push()')
     .replace(/\bpopMatrix\s*\(\s*\)/g, 'pop()');
 
-  const compatibilityCode = makeCompatibilityShims(sanitizedCode);
-  const codeToRun = injectDefaultCanvas(compatibilityCode);
+  // Detect ProcessingJS/Khan-style programs (runPJS / size) and use a different template
+  const isPJS = /\brunPJS\b/.test(sanitizedCode) || /\bsize\s*\(/.test(sanitizedCode);
 
-  const canvasSize = parseCanvasSize(sanitizedCode) || { width: 300, height: 300 };
+  let codeToRun = sanitizedCode;
+  let canvasSize = parseCanvasSize(sanitizedCode) || { width: 300, height: 300 };
+
+  if (!isPJS) {
+    const compatibilityCode = makeCompatibilityShims(sanitizedCode);
+    codeToRun = injectDefaultCanvas(compatibilityCode);
+  }
 
   preview.style.width = `${canvasSize.width}px`;
   preview.style.height = `${canvasSize.height}px`;
@@ -131,7 +141,43 @@ function createFrame(code) {
 
   preview.appendChild(iframe);
 
-  iframe.srcdoc = `
+  if (/\brunPJS\b/.test(sanitizedCode) || /\bsize\s*\(/.test(sanitizedCode)) {
+    // ProcessingJS / Khan exporter template
+    iframe.srcdoc = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<style>
+  html, body { margin:0; padding:0; overflow:hidden; background:#000 }
+  #wrapper { width:100%; height:100%; display:flex; justify-content:center; align-items:center }
+  canvas { display:block; outline:none }
+</style>
+</head>
+<body id="wrapper">
+  <canvas class="sketch"></canvas>
+
+  <script src="https://cdn.jsdelivr.net/gh/Khan/processing-js@master/processing.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/Mushy-Avocado/KA-exporter@v1.0.1/exporter.js"></script>
+
+  <script>
+window.onerror = function(msg, src, line) {
+  document.body.innerHTML = "<pre style='color:red; padding:10px;'>" + msg + "\\nLine: " + line + "</pre>";
+};
+
+${codeToRun}
+
+  <\/script>
+</body>
+</html>
+`;
+  } else {
+    // p5.js template (default)
+    const compatibilityCode = makeCompatibilityShims(sanitizedCode);
+    const p5Code = injectDefaultCanvas(compatibilityCode);
+
+    iframe.srcdoc = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -160,12 +206,13 @@ window.onerror = function(msg, src, line) {
     "</pre>";
 };
 
-${codeToRun}
+${p5Code}
 <\/script>
 
 </body>
 </html>
 `;
+  }
 
   iframe.addEventListener('load', () => {
     try {
