@@ -5,8 +5,13 @@ var verts = [];
 mouseReleased = function(){
    	verts.push({x:mouseX,y:mouseY});
 };
+keyReleased = function(){
+    if(keyCode === 32 && verts.length > 0){
+        verts.splice(verts.length-1,1);
+    }
+};
 draw = function(){
-    strokeJoin(ROUND);b
+    strokeJoin(ROUND);
     background(0);
     stroke(255,0,0);
     noFill();
@@ -16,7 +21,4 @@ draw = function(){
         	vertex(v.x,v.y);
         }
     endShape();
-    if(keyIsPressed && keyCode === 32 && verts.length > 0){
-        verts.splice(verts.length,1);
-    }
 };
